@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#222"
+    >
+
+    <TextView
+        android:id="@+id/alarmText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Alarm is ringing!"
+        android:textColor="#fff"
+        android:textSize="32sp"
+        android:layout_marginBottom="40dp"
+        android:textStyle="bold"/>
+
+    <Button
+        android:id="@+id/snoozeButton"
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:text="Snooze"
+        android:textSize="20sp"
+        android:layout_marginBottom="20dp"/>
+
+    <Button
+        android:id="@+id/stopButton"
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:text="Stop"
+        android:textSize="20sp"/>
+
+</LinearLayout> 

@@ -70,6 +70,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val channel = NotificationChannel(
                 channelId, channelName, NotificationManager.IMPORTANCE_HIGH
             )
+            channel.lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             notificationManager.createNotificationChannel(channel)
         }
 
@@ -96,6 +97,13 @@ class AlarmReceiver : BroadcastReceiver() {
             android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent
         ).build()
 
+        // Prepare full-screen intent for AlarmActivity
+        val fullScreenIntent = Intent(context, AlarmActivity::class.java)
+        fullScreenIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val fullScreenPendingIntent = PendingIntent.getActivity(
+            context, 3, fullScreenIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification = NotificationCompat.Builder(context, channelId)
             .setContentTitle("Alarm")
             .setContentText("Your alarm is ringing!")
@@ -106,6 +114,7 @@ class AlarmReceiver : BroadcastReceiver() {
             .setAutoCancel(true)
             .addAction(snoozeAction)
             .addAction(stopAction)
+            .setFullScreenIntent(fullScreenPendingIntent, true)
             .build()
 
         notificationManager.notify(1, notification)

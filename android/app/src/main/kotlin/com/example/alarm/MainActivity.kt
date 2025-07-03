@@ -25,7 +25,8 @@ class MainActivity: FlutterActivity() {
             call, result ->
             if (call.method == "setAlarm") {
                 val timeMillis = call.argument<Long>("time") ?: 0L
-                setAlarm(timeMillis)
+                val alarmId = call.argument<Long>("alarmId")?.toInt() ?: timeMillis.toInt()
+                setAlarm(timeMillis, alarmId)
                 result.success(null)
             } else {
                 result.notImplemented()
@@ -33,11 +34,11 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    private fun setAlarm(timeMillis: Long) {
+    private fun setAlarm(timeMillis: Long, alarmId: Int) {
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(this, AlarmReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
-            this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            this, alarmId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarmManager.setExactAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
