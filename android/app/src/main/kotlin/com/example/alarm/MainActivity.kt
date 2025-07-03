@@ -26,7 +26,12 @@ class MainActivity: FlutterActivity() {
             if (call.method == "setAlarm") {
                 val timeMillis = call.argument<Long>("time") ?: 0L
                 val alarmId = call.argument<Long>("alarmId")?.toInt() ?: timeMillis.toInt()
-                setAlarm(timeMillis, alarmId)
+                val vibration = call.argument<Boolean>("vibration") ?: true
+                setAlarm(timeMillis, alarmId, vibration)
+                result.success(null)
+            } else if (call.method == "cancelAlarm") {
+                val alarmId = call.argument<Int>("alarmId") ?: 0
+                cancelAlarm(alarmId)
                 result.success(null)
             } else {
                 result.notImplemented()
@@ -34,9 +39,10 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    private fun setAlarm(timeMillis: Long, alarmId: Int) {
+    private fun setAlarm(timeMillis: Long, alarmId: Int, vibration: Boolean) {
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(this, AlarmReceiver::class.java)
+        intent.putExtra("vibration", vibration)
         val pendingIntent = PendingIntent.getBroadcast(
             this, alarmId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -45,7 +51,17 @@ class MainActivity: FlutterActivity() {
             timeMillis,
             pendingIntent
         )
-        Toast.makeText(this, "Alarm scheduled for: $timeMillis", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Alarm scheduled for: $timeMillis (vibration=$vibration)", Toast.LENGTH_LONG).show()
+    }
+
+    private fun cancelAlarm(alarmId: Int) {
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(this, AlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            this, alarmId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(pendingIntent)
+        Toast.makeText(this, "Alarm canceled: $alarmId", Toast.LENGTH_SHORT).show()
     }
 
     private fun checkAndRequestExactAlarmPermission() {

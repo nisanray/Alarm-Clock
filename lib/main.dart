@@ -1,13 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
-import 'analog_clock_get.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
+import 'model/alarm.dart';
+import 'widgets/alarm_dialog.dart';
+import 'widgets/alarm_tile.dart';
+import 'widgets/digital_clock.dart';
+import 'package:vibration/vibration.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  Hive.registerAdapter(AlarmAdapter());
+  await Hive.openBox<Alarm>('alarms');
+  await _requestNotificationPermission();
   runApp(const AlarmApp());
 }
+
+Future<void> _requestNotificationPermission() async {
+  if (await Permission.notification.isDenied) {
+    final result = await Permission.notification.request();
+    if (!result.isGranted) {
+      // Show a user-facing dialog
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showDialog(
+          context: navigatorKey.currentContext!,
+          builder: (context) => AlertDialog(
+            title: const Text('Permission Required'),
+            content: const Text(
+                'Notification permission is required for alarms to work properly.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  openAppSettings();
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        );
+      });
+    }
+  }
+}
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 class AlarmApp extends StatelessWidget {
   const AlarmApp({super.key});
@@ -16,6 +62,7 @@ class AlarmApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Alarm App',
+      navigatorKey: navigatorKey,
       home: AlarmHomePage(),
     );
   }
@@ -28,20 +75,19 @@ class AlarmHomePage extends StatefulWidget {
 
 class _AlarmHomePageState extends State<AlarmHomePage> {
   static const platform = MethodChannel('alarm_channel');
-  TimeOfDay? _selectedTime;
-
   late DateTime _currentTime;
   late final Ticker _ticker;
-
-  // Multiple alarms support
-  List<DateTime> _alarms = [];
+  late Box<Alarm> _alarmBox;
 
   @override
   void initState() {
     super.initState();
     _currentTime = DateTime.now();
     _ticker = Ticker(_onTick)..start();
+    _alarmBox = Hive.box<Alarm>('alarms');
   }
+
+  List<Alarm> get _alarms => _alarmBox.values.toList();
 
   void _onTick(Duration _) {
     setState(() {
@@ -55,46 +101,66 @@ class _AlarmHomePageState extends State<AlarmHomePage> {
     super.dispose();
   }
 
-  Future<void> _addAlarm() async {
-    final picked = await showTimePicker(
+  Future<void> _showAlarmDialog({Alarm? alarm}) async {
+    await showDialog(
       context: context,
-      initialTime: TimeOfDay.now(),
+      builder: (context) => AlarmDialog(
+        alarm: alarm,
+        onSave: (newAlarm) async {
+          debugPrint(
+              'onSave called with alarm: ${newAlarm.id}, label: ${newAlarm.label}, enabled: ${newAlarm.enabled}');
+          await _alarmBox.put(newAlarm.id.toString(), newAlarm);
+          if (newAlarm.enabled) {
+            await platform.invokeMethod('setAlarm', {
+              'time': newAlarm.timeMillis,
+              'alarmId': newAlarm.id,
+              'vibration': newAlarm.vibration,
+            });
+          } else {
+            // Optionally cancel native alarm here
+          }
+          if (mounted) setState(() {});
+        },
+      ),
     );
-    if (picked != null) {
-      final now = DateTime.now();
-      var alarmTime = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        picked.hour,
-        picked.minute,
-      );
-      if (alarmTime.isBefore(now)) {
-        alarmTime = alarmTime.add(const Duration(days: 1));
-      }
-      final millis = alarmTime.millisecondsSinceEpoch;
-      try {
-        await platform
-            .invokeMethod('setAlarm', {'time': millis, 'alarmId': millis});
-        setState(() {
-          _alarms.add(alarmTime);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Alarm set for ${_formatTime(alarmTime)}')),
-        );
-      } on PlatformException catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to set alarm: ${e.message}')),
-        );
-      }
-    }
   }
 
-  void _deleteAlarm(int index) {
-    setState(() {
-      _alarms.removeAt(index);
-    });
-    // Note: For simplicity, this does not cancel the native alarm. Can be extended.
+  void _deleteAlarm(int index) async {
+    final alarm = _alarms[index];
+    try {
+      await platform.invokeMethod('cancelAlarm', {'alarmId': alarm.id});
+    } catch (e) {
+      debugPrint('Error canceling alarm: $e');
+    }
+    await _alarmBox.delete(alarm.id.toString());
+    setState(() {});
+  }
+
+  void _toggleAlarm(int index, bool value) async {
+    final alarm = _alarms[index];
+    final updated = Alarm(
+      id: alarm.id,
+      timeMillis: alarm.timeMillis,
+      label: alarm.label,
+      ringtone: alarm.ringtone,
+      repeatDays: alarm.repeatDays,
+      enabled: value,
+    );
+    await _alarmBox.put(alarm.id.toString(), updated);
+    if (value) {
+      await platform.invokeMethod('setAlarm', {
+        'time': alarm.timeMillis,
+        'alarmId': alarm.id,
+        'vibration': alarm.vibration,
+      });
+    } else {
+      try {
+        await platform.invokeMethod('cancelAlarm', {'alarmId': alarm.id});
+      } catch (e) {
+        debugPrint('Error canceling alarm: $e');
+      }
+    }
+    setState(() {});
   }
 
   @override
@@ -104,48 +170,49 @@ class _AlarmHomePageState extends State<AlarmHomePage> {
       body: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          AnalogClockGet(),
-          const SizedBox(height: 24),
-          Text(
-            _formatTime(_currentTime),
-            style: const TextStyle(
-                fontSize: 48, fontWeight: FontWeight.bold, letterSpacing: 2),
-          ),
-          const SizedBox(height: 40),
-          ElevatedButton(
-            onPressed: _addAlarm,
-            child: const Text('Add Alarm'),
-          ),
+          DigitalClock(time: _currentTime),
           const SizedBox(height: 40),
           Text('Scheduled Alarms:',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           Expanded(
             child: ListView.builder(
               itemCount: _alarms.length,
-              itemBuilder: (context, index) => ListTile(
-                title: Text(_formatTime(_alarms[index])),
-                trailing: IconButton(
-                  icon: Icon(Icons.delete),
-                  onPressed: () => _deleteAlarm(index),
-                ),
-              ),
+              itemBuilder: (context, index) {
+                final alarm = _alarms[index];
+                return AlarmTile(
+                  alarm: alarm,
+                  onTap: () => _showAlarmDialog(alarm: alarm),
+                  onToggle: (val) => _toggleAlarm(index, val),
+                  onDelete: () => _deleteAlarm(index),
+                );
+              },
             ),
           ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              'Note: On some devices, only the system alarm app can show alarms over the lock screen. This is a device restriction, not a bug in this app. Your alarm will always play sound and show a notification.',
-              style: TextStyle(color: Colors.red, fontSize: 16),
-              textAlign: TextAlign.center,
-            ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () async {
+              if (await Vibration.hasVibrator() ?? false) {
+                Vibration.vibrate(duration: 1000);
+              }
+            },
+            child: Text('Test Vibration'),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAlarmDialog(),
+        child: const Icon(Icons.add),
+        tooltip: 'Add Alarm',
       ),
     );
   }
 
   String _formatTime(DateTime time) {
+    final twoDigits = (int n) => n.toString().padLeft(2, '0');
+    return '${twoDigits(time.hour)}:${twoDigits(time.minute)}';
+  }
+
+  String _formatTimeWithSeconds(DateTime time) {
     final twoDigits = (int n) => n.toString().padLeft(2, '0');
     return '${twoDigits(time.hour)}:${twoDigits(time.minute)}:${twoDigits(time.second)}';
   }

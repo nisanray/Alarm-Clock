@@ -13,9 +13,13 @@ import android.app.AlertDialog
 import android.content.DialogInterface
 import android.os.Build
 import android.util.Log
+import android.os.Vibrator
+import android.os.VibrationEffect
 
 class AlarmActivity : Activity() {
     private var wakeLock: PowerManager.WakeLock? = null
+    private var vibrator: Vibrator? = null
+    private val vibrationPattern = longArrayOf(0, 1000, 1000) // Vibrate 1s, pause 1s, repeat
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,11 +45,25 @@ class AlarmActivity : Activity() {
         val alarmText = findViewById<TextView>(R.id.alarmText)
         alarmText.text = "Alarm is ringing!"
 
+        // Start repeating vibration
+        try {
+            vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createWaveform(vibrationPattern, 1)) // 1 = repeat after first vibrate
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(vibrationPattern, 1)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         snoozeButton.setOnClickListener {
             val snoozeIntent = Intent(this, AlarmReceiver::class.java).apply {
                 action = AlarmReceiver.ACTION_SNOOZE
             }
             sendBroadcast(snoozeIntent)
+            stopVibration()
             finish()
         }
         stopButton.setOnClickListener {
@@ -53,6 +71,7 @@ class AlarmActivity : Activity() {
                 action = AlarmReceiver.ACTION_STOP
             }
             sendBroadcast(stopIntent)
+            stopVibration()
             finish()
         }
     }
@@ -60,9 +79,18 @@ class AlarmActivity : Activity() {
     override fun onDestroy() {
         super.onDestroy()
         wakeLock?.release()
+        stopVibration()
     }
 
     override fun onBackPressed() {
         // Disable back button to make alarm persistent
+    }
+
+    private fun stopVibration() {
+        try {
+            vibrator?.cancel()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 } 

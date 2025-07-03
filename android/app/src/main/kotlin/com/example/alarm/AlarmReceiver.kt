@@ -14,6 +14,8 @@ import androidx.core.app.NotificationCompat
 import android.media.MediaPlayer
 import android.app.AlarmManager
 import android.os.SystemClock
+import android.os.Vibrator
+import android.os.VibrationEffect
 
 class AlarmReceiver : BroadcastReceiver() {
     companion object {
@@ -49,6 +51,24 @@ class AlarmReceiver : BroadcastReceiver() {
             else -> {
                 Log.d("AlarmReceiver", "Alarm received!")
                 Toast.makeText(context, "Alarm triggered!", Toast.LENGTH_LONG).show()
+                // Vibration logic
+                val vibration = intent.getBooleanExtra("vibration", true)
+                Log.d("AlarmReceiver", "Vibration extra: $vibration")
+                Toast.makeText(context, "Vibration: $vibration", Toast.LENGTH_SHORT).show()
+                if (vibration) {
+                    try {
+                        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                        val pattern = longArrayOf(0, 1000, 1000, 1000, 1000, 1000, 1000, 1000) // Vibrate 1s, pause 1s, repeat
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0)) // 0 = repeat
+                        } else {
+                            @Suppress("DEPRECATION")
+                            vibrator.vibrate(pattern, 0)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("AlarmReceiver", "Failed to vibrate", e)
+                    }
+                }
                 // Play custom ringtone from res/raw/old_alarm.mp3
                 try {
                     stopRingtone() // Stop any previous instance
@@ -65,12 +85,15 @@ class AlarmReceiver : BroadcastReceiver() {
         val channelName = "Alarm Channel"
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+        val vibrationPattern = longArrayOf(0, 1000, 1000, 1000, 1000, 1000, 1000, 1000)
         // Create notification channel for Android O+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId, channelName, NotificationManager.IMPORTANCE_HIGH
             )
             channel.lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+            channel.enableVibration(true)
+            channel.vibrationPattern = vibrationPattern
             notificationManager.createNotificationChannel(channel)
         }
 
@@ -110,6 +133,7 @@ class AlarmReceiver : BroadcastReceiver() {
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setVibrate(vibrationPattern)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .addAction(snoozeAction)
